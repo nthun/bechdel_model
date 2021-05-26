@@ -30,12 +30,19 @@ theme_set(theme_light())
 ```
 
 
+# What is this
+
+This is a tutorial document to use R for creating an analysis report. It includes the following elements:
+
+- Data transformation.
+- Data visualization.
+- Using the gender package to infer the gender based on first name.
+- Using, interpreting, and evaluating binomial logistic regression results.
+
 # Aim
 
-This is a tutorial to use R for creating an analysis report
-
 We will use the Bechdel test dataset from the TidyTuesday project to predict if a movie passed the test or not, based on the gender of the writers. Dataset and info available  from here: https://github.com/rfordatascience/tidytuesday/blob/master/data/2021/2021-03-09/readme.md
-This dataset is collected by FiveThirtyEight.
+This dataset is collected by https://fivethirtyeight.com/ 
 
 ## What is the Bechdel test?
 According to Wikipedia:
@@ -116,7 +123,7 @@ female_writers <-
     drop_na()
 ```
 
-Finally, I create the final analysis dataset, where I only keep relevant variables, recode the outcome to numeric (0/1), create a decade variable instead of year, and convert the runtime to a numeric value.
+Finally, I create the final analysis dataset, where I only keep relevant variables, recode the outcome to numeric (0/1), create a decade variable instead of year, and convert the runtime in hours.
 
 ```{r}
 movies <-
@@ -125,7 +132,7 @@ movies <-
               title,
               bechdel_pass = recode(binary,  "FAIL" = 0L, "PASS" = 1L),
               decade = (year %/% 10)*10,
-              runtime = parse_number(runtime),
+              runtime = parse_number(runtime)/60,
               writer) %>% 
     left_join(female_writers, by = "imdb_id") %>% 
     drop_na(female_writer)
@@ -139,7 +146,9 @@ I will use the the proportion of female writers as a main predictor, but as cont
 ```{r}
 
 bechdel_model <-
-    glm(bechdel_pass ~ female_writer + decade + runtime, data = movies, family = "binomial")
+    glm(bechdel_pass ~ female_writer + decade + runtime, 
+        data = movies, 
+        family = "binomial")
 
 # This is the standard regression output
 summary(bechdel_model)
@@ -152,30 +161,31 @@ tab_model(bechdel_model, show.aic = TRUE)
 
 ```
 
-The results reveal that all predictors are significant. This means that the chance of passing the Bechdel test is 8-fold if the entire writer team is female, compared to an all male writer team. This holds even if we account for the (small) effects of the release decade (newer movies pass the test more often), and runtime (longer movies are slightly more likely to fail the test, wtf?).
+The results reveal that all predictors are significant. This means that the chance of passing the Bechdel test is 8-fold if the entire writer team is female, compared to an all male writer team. This holds even if we account for the (small) effects of the release decade (newer movies pass the test more often), and runtime (longer movies are  more likely to fail the test, wtf?).
 
 Assumption checks are available from the `{performance}` package, that is part of the `{easystats}` ecosystem. I won't really do much about the assumption checks now, other than showing the output.
 
-```{r include = FALSE}
+```{r}
 check_model(bechdel_model)
 ```
 
 ## Evaluate model performance
 
-In general, `r percent(mean(movies$bechdel_pass))` of the investigated movies passed the Bechdel test. This 
+In general, `r percent(mean(movies$bechdel_pass))` of the investigated movies passed the Bechdel test.  
 
 ```{r}
 
-augment(bechdel_model) %>% 
+augment(bechdel_model, type.predict = "link") %>% 
     ggplot() +
     aes(x = female_writer, y = exp(.fitted)) +
+    geom_point(alpha = .1) +
     geom_smooth() +
     scale_x_continuous(labels = scales::percent_format()) +
     geom_hline(yintercept = 1, color = "red", lty = "dashed") +
     labs(x = "% of female writers for the movie",
          y = "Odds ratio of passing the Bechdel test",
          title = "The association of proportion of female writers and passing the Bechdel test in movies",
-         subtitle = "When all writers are female, passing the Bechdel test is 5 times more likely. For all male writer team, ")
+         subtitle = "When all writers are female, passing the Bechdel test is 5 times more likely compared to an all male writer team.")
 ```
 
 ### ROC curve
@@ -208,5 +218,4 @@ autoplot(roc_bechdel) +
 - It would be possible to create a more comprehensive proportion of females variable, taking into account the director(s) along with the writers. 
 - Gender classification could be improved by tinkering with the parameters of the gender package.
 - Other types of models could be more useful, e.g. random forest.
-- The words from the description of the movie could be added as predictors
-- etc.
+- The words from the description of the movie could be added as predictors.
