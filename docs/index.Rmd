@@ -61,11 +61,10 @@ raw_movies <- read_csv('https://raw.githubusercontent.com/rfordatascience/tidytu
 
 ```
 
+There are two datasets in the project. The first one contains `r nrow(raw_bechdel)` Bechdel ratings, movie title, and release year. 
 
-There are two datasets in the project. The first one contains `r nrow(raw_bechdel)` Bechdel ratings, movie title, and release year. Let's just make two quick plots to see the distribution of the test results and the distribution by year.
-
-```{r}
-
+```{r eval=FALSE, include=FALSE}
+# Let's just make two quick plots to see the distribution of the test results and the distribution by year.
 raw_bechdel %>% 
     ggplot() +
     aes(x = rating) +
@@ -130,7 +129,7 @@ movies <-
     raw_movies %>% 
     transmute(imdb_id,
               title,
-              bechdel_pass = recode(binary,  "FAIL" = 0L, "PASS" = 1L),
+              bechdel_pass = recode(binary, "FAIL" = 0L, "PASS" = 1L),
               decade = (year %/% 10)*10,
               runtime = parse_number(runtime)/60,
               writer) %>% 
@@ -156,12 +155,23 @@ summary(bechdel_model)
 # This is the tidy approach, that converts log likelihoods to odds ratios, and adds confidence intervals.
 tidy(bechdel_model, conf.int = TRUE, exponentiate = TRUE)
 
-# This is for conveniently making an APA compatible summary table.
-tab_model(bechdel_model, show.aic = TRUE)
+# This is for conveniently making an APA compatible summary table. We also use robust statndard errors to account for the heteroscedasticity.
+
+tab_model(bechdel_model, 
+          show.aic = TRUE,
+          show.loglik = TRUE, 
+          string.ci = "95% CI", 
+          show.stat = TRUE,
+          robust = TRUE,
+          dv.labels = "Passing the Bechdel test",
+          pred.labels = c("(Intercept)",
+                          "% female in writer team", 
+                          "Decade of release", 
+                          "Runtime (h)"))
 
 ```
 
-The results reveal that all predictors are significant. This means that the chance of passing the Bechdel test is 8-fold if the entire writer team is female, compared to an all male writer team. This holds even if we account for the (small) effects of the release decade (newer movies pass the test more often), and runtime (longer movies are  more likely to fail the test, wtf?).
+The results reveal that all predictors are significant. This means that the chance of passing the Bechdel test is 8.22-fold if the entire writer team is female, compared to an all male writer team. This holds even if we account for the effects of the release decade (newer movies pass the test more often), and runtime (longer movies are more likely to fail the test, wtf?).
 
 Assumption checks are available from the `{performance}` package, that is part of the `{easystats}` ecosystem. I won't really do much about the assumption checks now, other than showing the output.
 
@@ -171,21 +181,31 @@ check_model(bechdel_model)
 
 ## Evaluate model performance
 
-In general, `r percent(mean(movies$bechdel_pass))` of the investigated movies passed the Bechdel test.  
+In general, `r percent(mean(movies$bechdel_pass))` of the investigated movies passed the Bechdel test. Full male teams are twice as likely to fail the test, while full female writer teams are approximately 4 times more likely to pass the test. Thus there is an 8-fold difference between all male and all female writer teams.
 
 ```{r}
+# Create a prediction dataset with all possible predictor values
+newdata <-
+    crossing(female_writer = seq(0,1,.025),
+             decade = seq(1970, 2010, 10),
+             runtime = unique(movies$runtime))
 
-augment(bechdel_model, type.predict = "link") %>% 
+# Interpolate the predicted values, and create a
+augment(bechdel_model, newdata = newdata, type.predict = "link") %>%
+    group_by(female_writer) %>% 
+    mutate( .fitted = exp(.fitted),
+            avg_fitted = mean(.fitted, na.rm = TRUE)) %>% 
+    ungroup() %>% 
     ggplot() +
-    aes(x = female_writer, y = exp(.fitted)) +
-    geom_point(alpha = .1) +
-    geom_smooth() +
-    scale_x_continuous(labels = scales::percent_format()) +
+    aes(x = female_writer, y = .fitted) +
     geom_hline(yintercept = 1, color = "red", lty = "dashed") +
+    geom_point(alpha = .01) +
+    geom_line(aes(y = avg_fitted), color = "blue", size = 2, alpha = .5) +
+    scale_x_continuous(labels = scales::percent_format()) +
     labs(x = "% of female writers for the movie",
          y = "Odds ratio of passing the Bechdel test",
-         title = "The association of proportion of female writers and passing the Bechdel test in movies",
-         subtitle = "When all writers are female, passing the Bechdel test is 5 times more likely compared to an all male writer team.")
+         title = "Proportion of female writers vs. passing the Bechdel test in movies",
+         subtitle = "When all writers are female, passing the Bechdel test is 8 times more likely compared to an all male writer team.")
 ```
 
 ### ROC curve
